@@ -236,12 +236,16 @@ public class TreasuryListener extends EconomyAdapter {
                     "chestshop:sub:" + event.getTarget() + ":" + event.getAmount() + ":" + System.nanoTime()
             );
 
+            // Use the target's UUID as the initiator for personal accounts,
+            // since the account owner is the one authorizing the withdrawal.
+            UUID initiator = isBusinessUuid(event.getTarget()) ? CHESTSHOP_SYSTEM_UUID : event.getTarget();
+
             TransferRequest request = new TransferRequest(
                     targetAccountId,
                     systemAccountId,
                     event.getAmount(),
                     "ChestShop withdrawal",
-                    CHESTSHOP_SYSTEM_UUID,
+                    initiator,
                     null,
                     "ChestShop",
                     dedupKey
