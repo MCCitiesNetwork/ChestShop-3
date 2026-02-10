@@ -300,8 +300,18 @@ public class NameManager implements Listener {
             }
         }
 
-        if (Permission.otherName(player, base, name)) {
-            return true;
+        boolean isBusinessAccount = ChestShopSign.isBusinessAccount(name);
+
+        // For business accounts, skip permission-based shortcuts — access is controlled
+        // solely by Treasury via AccountAccessEvent. Only ChestShop admins bypass this.
+        if (isBusinessAccount) {
+            if (Permission.has(player, Permission.ADMIN)) {
+                return true;
+            }
+        } else {
+            if (Permission.otherName(player, base, name)) {
+                return true;
+            }
         }
 
         AccountQueryEvent queryEvent = new AccountQueryEvent(name);
@@ -316,7 +326,7 @@ public class NameManager implements Listener {
             ChestShop.logDebug(player.getName() + " cannot use the name " + name + " for a shop as no account with that name exists");
             return false;
         }
-        if (!account.getName().equalsIgnoreCase(name) && Permission.otherName(player, base, account.getName())) {
+        if (!isBusinessAccount && !account.getName().equalsIgnoreCase(name) && Permission.otherName(player, base, account.getName())) {
             return true;
         }
         AccountAccessEvent event = new AccountAccessEvent(player, account);
