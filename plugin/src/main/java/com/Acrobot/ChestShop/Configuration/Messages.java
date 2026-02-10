@@ -112,6 +112,9 @@ public class Messages {
 
     public static Message CANNOT_CREATE_SHOP_HERE;
 
+    public static Message BUSINESS_ACCOUNT_NOT_FOUND;
+    public static Message TREASURY_REQUIRED;
+
     public static Message TOGGLE_MESSAGES_OFF;
     public static Message TOGGLE_MESSAGES_ON;
 

@@ -4,6 +4,7 @@ import com.Acrobot.Breeze.Utils.MaterialUtil;
 import com.Acrobot.ChestShop.Configuration.Properties;
 import com.Acrobot.ChestShop.Listeners.Economy.EconomyAdapter;
 import com.Acrobot.ChestShop.Listeners.Economy.Plugins.ReserveListener;
+import com.Acrobot.ChestShop.Listeners.Economy.Plugins.TreasuryListener;
 import com.Acrobot.ChestShop.Listeners.Economy.Plugins.VaultListener;
 import com.Acrobot.ChestShop.Plugins.*;
 import com.google.common.collect.ImmutableMap;
@@ -100,18 +101,23 @@ public class Dependencies implements Listener {
 
         EconomyAdapter economy = null;
 
-        if(Bukkit.getPluginManager().getPlugin("Reserve") != null) {
+        if (Bukkit.getPluginManager().getPlugin("Treasury") != null) {
+            plugin = "Treasury";
+            economy = TreasuryListener.prepareListener();
+        }
+
+        if (economy == null && Bukkit.getPluginManager().getPlugin("Reserve") != null) {
             plugin = "Reserve";
             economy = ReserveListener.prepareListener();
         }
 
-        if(Bukkit.getPluginManager().getPlugin("Vault") != null) {
+        if (economy == null && Bukkit.getPluginManager().getPlugin("Vault") != null) {
             plugin = "Vault";
             economy = VaultListener.initializeVault();
         }
 
         if (economy == null) {
-            ChestShop.getBukkitLogger().severe("No Economy adapter found! You need to install either Vault or Reserve!");
+            ChestShop.getBukkitLogger().severe("No Economy adapter found! You need to install either Treasury, Vault, or Reserve!");
             return false;
         }
 

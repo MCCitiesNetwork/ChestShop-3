@@ -57,6 +57,24 @@ public class ChestShopSign {
     };
     public static final String AUTOFILL_CODE = "?";
 
+    private static final Pattern BUSINESS_PATTERN = Pattern.compile("(?i)^B:[0-9A-Z]+$");
+
+    public static boolean isBusinessAccount(String owner) {
+        return BUSINESS_PATTERN.matcher(owner).matches();
+    }
+
+    public static boolean isBusinessAccount(String[] lines) {
+        return isBusinessAccount(getOwner(lines));
+    }
+
+    public static int getBusinessAccountId(String owner) {
+        return Integer.parseInt(owner.substring(2), 36);
+    }
+
+    public static String businessAccountSignName(int accountId) {
+        return "B:" + Integer.toString(accountId, 36).toUpperCase(Locale.ROOT);
+    }
+
     public static boolean isAdminShop(Inventory ownerInventory) {
         return ownerInventory instanceof AdminInventory;
     }

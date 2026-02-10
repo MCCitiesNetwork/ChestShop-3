@@ -384,6 +384,13 @@
         </dependency>
 
         <dependency>
+            <groupId>net.democracycraft</groupId>
+            <artifactId>treasury</artifactId>
+            <version>1.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
             <groupId>me.crafter.mc</groupId>
             <artifactId>lockettepro</artifactId>
             <version>2.10-SNAPSHOT</version>
@@ -416,8 +423,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
                 <configuration>
-                    <source>1.8</source>
-                    <target>1.8</target>
+                    <source>21</source>
+                    <target>21</target>
                 </configuration>
             </plugin>
             <plugin>

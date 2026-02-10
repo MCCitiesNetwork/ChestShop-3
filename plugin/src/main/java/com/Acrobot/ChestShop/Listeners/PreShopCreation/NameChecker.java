@@ -1,11 +1,13 @@
 package com.Acrobot.ChestShop.Listeners.PreShopCreation;
 
 import com.Acrobot.ChestShop.ChestShop;
+import com.Acrobot.ChestShop.Configuration.Messages;
 import com.Acrobot.ChestShop.Database.Account;
 import com.Acrobot.ChestShop.Events.AccountQueryEvent;
 import com.Acrobot.ChestShop.Events.PreShopCreationEvent;
 import com.Acrobot.ChestShop.Signs.ChestShopSign;
 import com.Acrobot.ChestShop.UUIDs.NameManager;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -36,6 +38,17 @@ public class NameChecker implements Listener {
         String name = ChestShopSign.getOwner(event.getSignLines());
         Player player = event.getPlayer();
 
+        // Handle business account names (B:<base36>)
+        if (ChestShopSign.isBusinessAccount(name)) {
+            if (Bukkit.getPluginManager().getPlugin("Treasury") == null) {
+                Messages.TREASURY_REQUIRED.sendWithPrefix(player);
+                event.setSignLine(NAME_LINE, "");
+                event.setOutcome(UNKNOWN_PLAYER);
+                return;
+            }
+            // Treasury is loaded; let the normal flow handle it via AccountQueryEvent/AccountAccessEvent
+        }
+
         Account account = event.getOwnerAccount();
         if (account == null || !account.getShortName().equalsIgnoreCase(name)) {
             account = null;
@@ -47,6 +60,13 @@ public class NameChecker implements Listener {
                     ChestShop.callEvent(accountQueryEvent);
                     account = accountQueryEvent.getAccount();
                     if (account == null) {
+                        if (ChestShopSign.isBusinessAccount(name)) {
+                            // Business account not found in Treasury
+                            Messages.BUSINESS_ACCOUNT_NOT_FOUND.sendWithPrefix(player);
+                            event.setSignLine(NAME_LINE, "");
+                            event.setOutcome(UNKNOWN_PLAYER);
+                            return;
+                        }
                         Player otherPlayer = ChestShop.getBukkitServer().getPlayer(name);
                         try {
                             if (otherPlayer != null) {
@@ -65,7 +85,13 @@ public class NameChecker implements Listener {
         }
         event.setOwnerAccount(account);
         if (account != null) {
-            event.setSignLine(NAME_LINE, account.getShortName());
+            // Normalize business account names to uppercase
+            if (ChestShopSign.isBusinessAccount(account.getShortName())) {
+                int accountId = ChestShopSign.getBusinessAccountId(account.getShortName());
+                event.setSignLine(NAME_LINE, ChestShopSign.businessAccountSignName(accountId));
+            } else {
+                event.setSignLine(NAME_LINE, account.getShortName());
+            }
         } else {
             event.setSignLine(NAME_LINE, "");
             event.setOutcome(UNKNOWN_PLAYER);
