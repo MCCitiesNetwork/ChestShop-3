@@ -8,6 +8,7 @@ import com.Acrobot.ChestShop.ChestShop;
 import com.Acrobot.ChestShop.Configuration.Properties;
 import com.Acrobot.ChestShop.Containers.AdminInventory;
 import com.Acrobot.ChestShop.Database.Account;
+import com.Acrobot.ChestShop.Events.AccountAccessEvent;
 import com.Acrobot.ChestShop.Events.AccountQueryEvent;
 import com.Acrobot.ChestShop.Events.SignValidationEvent;
 import com.Acrobot.ChestShop.Permission;
@@ -191,6 +192,15 @@ public class ChestShopSign {
         if (account == null) {
             return player.getName().equalsIgnoreCase(name);
         }
+
+        // For business accounts, the UUID is synthetic and will never match a player UUID.
+        // Delegate to AccountAccessEvent so TreasuryListener can check membership/ownership.
+        if (isBusinessAccount(name)) {
+            AccountAccessEvent accessEvent = new AccountAccessEvent(player, account);
+            Bukkit.getPluginManager().callEvent(accessEvent);
+            return accessEvent.canAccess();
+        }
+
         return account.getUuid().equals(player.getUniqueId());
     }
 

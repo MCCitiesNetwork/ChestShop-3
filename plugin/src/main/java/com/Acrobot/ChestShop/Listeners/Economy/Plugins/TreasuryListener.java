@@ -326,7 +326,9 @@ public class TreasuryListener extends EconomyAdapter {
 
         try {
             int accountId = (int) uuid.getLeastSignificantBits();
-            boolean canAccess = treasury.canAccessAccount(event.getPlayer().getUniqueId(), accountId);
+            UUID playerUuid = event.getPlayer().getUniqueId();
+            boolean canAccess = treasury.isAccountMember(playerUuid, accountId)
+                    || treasury.isOwnerForAccountId(playerUuid, accountId);
             if (canAccess) {
                 event.setAccess(true);
             }
