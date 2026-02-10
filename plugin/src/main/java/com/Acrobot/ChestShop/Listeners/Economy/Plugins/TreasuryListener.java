@@ -13,8 +13,10 @@ import com.Acrobot.ChestShop.Events.Economy.CurrencyFormatEvent;
 import com.Acrobot.ChestShop.Events.Economy.CurrencyHoldEvent;
 import com.Acrobot.ChestShop.Events.Economy.CurrencySubtractEvent;
 import com.Acrobot.ChestShop.Events.Economy.CurrencyTransferEvent;
+import com.Acrobot.ChestShop.Events.TransactionEvent;
 import com.Acrobot.ChestShop.Listeners.Economy.EconomyAdapter;
 import com.Acrobot.ChestShop.Signs.ChestShopSign;
+import com.Acrobot.ChestShop.UUIDs.NameManager;
 import net.democracycraft.treasury.model.economy.TransferRequest;
 import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.utils.Idempotency;
@@ -22,10 +24,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
 import javax.annotation.Nullable;
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -259,7 +263,96 @@ public class TreasuryListener extends EconomyAdapter {
 
     @EventHandler
     public void onCurrencyTransfer(CurrencyTransferEvent event) {
-        processTransfer(event);
+        if (event.wasHandled() || event.getTransactionEvent() == null || event.getTransactionEvent().isCancelled()) {
+            return;
+        }
+
+        String message = buildTransferMessage(event.getTransactionEvent());
+        BigDecimal amountSent = event.getAmountSent();
+        BigDecimal amountReceived = event.getAmountReceived();
+        boolean senderIsAdmin = NameManager.isAdminShop(event.getSender());
+        boolean receiverIsAdmin = NameManager.isAdminShop(event.getReceiver());
+
+        // Subtract from sender (unless admin shop)
+        if (!senderIsAdmin) {
+            try {
+                int senderAccountId = resolveAccountId(event.getSender());
+                UUID initiator = isBusinessUuid(event.getSender()) ? CHESTSHOP_SYSTEM_UUID : event.getSender();
+                byte[] dedupKey = Idempotency.sha256(
+                        "chestshop:transfer:sub:" + event.getSender() + ":" + amountSent + ":" + System.nanoTime()
+                );
+                TransferRequest request = new TransferRequest(
+                        senderAccountId, systemAccountId, amountSent,
+                        message, initiator, null, "ChestShop", dedupKey
+                );
+                treasury.transfer(request);
+            } catch (Exception e) {
+                ChestShop.getBukkitLogger().log(Level.WARNING,
+                        "Treasury: Could not subtract " + amountSent + " from " + event.getSender(), e);
+                return;
+            }
+        }
+
+        // Add to receiver (unless admin shop)
+        if (!receiverIsAdmin) {
+            try {
+                int receiverAccountId = resolveAccountId(event.getReceiver());
+                byte[] dedupKey = Idempotency.sha256(
+                        "chestshop:transfer:add:" + event.getReceiver() + ":" + amountReceived + ":" + System.nanoTime()
+                );
+                TransferRequest request = new TransferRequest(
+                        systemAccountId, receiverAccountId, amountReceived,
+                        message, CHESTSHOP_SYSTEM_UUID, null, "ChestShop", dedupKey
+                );
+                treasury.transfer(request);
+            } catch (Exception e) {
+                ChestShop.getBukkitLogger().log(Level.WARNING,
+                        "Treasury: Could not add " + amountReceived + " to " + event.getReceiver(), e);
+                // Rollback the sender's subtraction
+                if (!senderIsAdmin) {
+                    try {
+                        int senderAccountId = resolveAccountId(event.getSender());
+                        byte[] dedupKey = Idempotency.sha256(
+                                "chestshop:rollback:" + event.getSender() + ":" + amountSent + ":" + System.nanoTime()
+                        );
+                        TransferRequest rollback = new TransferRequest(
+                                systemAccountId, senderAccountId, amountSent,
+                                "ChestShop rollback", CHESTSHOP_SYSTEM_UUID, null, "ChestShop", dedupKey
+                        );
+                        treasury.transfer(rollback);
+                    } catch (Exception rollbackEx) {
+                        ChestShop.getBukkitLogger().log(Level.SEVERE,
+                                "Treasury: CRITICAL - Failed to rollback " + amountSent + " to " + event.getSender(), rollbackEx);
+                    }
+                }
+                return;
+            }
+        }
+
+        event.setHandled(true);
+    }
+
+    private static final int MAX_MESSAGE_LENGTH = 250;
+
+    private static String buildTransferMessage(TransactionEvent txn) {
+        int totalItems = Arrays.stream(txn.getStock()).mapToInt(ItemStack::getAmount).sum();
+        String itemName = ChestShopSign.getItem(txn.getSign());
+        String ownerName = txn.getOwnerAccount().getName();
+        String clientName = txn.getClient().getName();
+        boolean isBuy = txn.getTransactionType() == TransactionEvent.TransactionType.BUY;
+
+        // "{client} bought x{qty} {item} from {owner}" or "{client} sold x{qty} {item} to {owner}"
+        String prefix = clientName + (isBuy ? " bought x" : " sold x") + totalItems + " ";
+        String suffix = (isBuy ? " from " : " to ") + ownerName;
+        int available = MAX_MESSAGE_LENGTH - prefix.length() - suffix.length();
+
+        if (available < 1) {
+            return (prefix + suffix).substring(0, MAX_MESSAGE_LENGTH);
+        }
+        if (itemName.length() > available) {
+            itemName = itemName.substring(0, available);
+        }
+        return prefix + itemName + suffix;
     }
 
     @EventHandler
