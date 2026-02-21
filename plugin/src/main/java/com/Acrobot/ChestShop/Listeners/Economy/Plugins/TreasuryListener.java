@@ -17,6 +17,8 @@ import com.Acrobot.ChestShop.Events.TransactionEvent;
 import com.Acrobot.ChestShop.Listeners.Economy.EconomyAdapter;
 import com.Acrobot.ChestShop.Signs.ChestShopSign;
 import com.Acrobot.ChestShop.UUIDs.NameManager;
+import net.democracycraft.business.api.BusinessApi;
+import net.democracycraft.business.model.RolePermission;
 import net.democracycraft.treasury.model.economy.TransferRequest;
 import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.utils.Idempotency;
@@ -49,10 +51,12 @@ public class TreasuryListener extends EconomyAdapter {
 
     private final TreasuryApi treasury;
     private final int systemAccountId;
+    @Nullable private final BusinessApi businessApi;
 
-    private TreasuryListener(TreasuryApi treasury, int systemAccountId) {
+    private TreasuryListener(TreasuryApi treasury, int systemAccountId, @Nullable BusinessApi businessApi) {
         this.treasury = treasury;
         this.systemAccountId = systemAccountId;
+        this.businessApi = businessApi;
     }
 
     /**
@@ -95,7 +99,21 @@ public class TreasuryListener extends EconomyAdapter {
         }
 
         ChestShop.getBukkitLogger().info("Treasury SYSTEM account initialized (ID: " + systemAccountId + ")");
-        return new TreasuryListener(treasury, systemAccountId);
+
+        // Optionally integrate with the Business plugin for CHESTSHOP permission checks
+        BusinessApi businessApi = null;
+        if (Bukkit.getPluginManager().getPlugin("Business") != null) {
+            RegisteredServiceProvider<BusinessApi> businessRsp =
+                    Bukkit.getServicesManager().getRegistration(BusinessApi.class);
+            if (businessRsp != null) {
+                businessApi = businessRsp.getProvider();
+                ChestShop.getBukkitLogger().info("Business API integrated: firm CHESTSHOP permissions will gate shop access.");
+            } else {
+                ChestShop.getBukkitLogger().warning("Business plugin found but BusinessApi service not registered — falling back to Treasury membership checks.");
+            }
+        }
+
+        return new TreasuryListener(treasury, systemAccountId, businessApi);
     }
 
     @Override
@@ -420,10 +438,20 @@ public class TreasuryListener extends EconomyAdapter {
         try {
             int accountId = (int) uuid.getLeastSignificantBits();
             UUID playerUuid = event.getPlayer().getUniqueId();
-            boolean canAccess = treasury.isAccountMember(playerUuid, accountId)
-                    || treasury.isOwnerForAccountId(playerUuid, accountId);
-            if (canAccess) {
-                event.setAccess(true);
+
+            if (businessApi != null) {
+                // Business plugin is present: use the CHESTSHOP role-permission as the
+                // authoritative gate for both shop creation and shop ownership checks.
+                if (businessApi.staff().hasPermissionForAccount(accountId, playerUuid, RolePermission.CHESTSHOP)) {
+                    event.setAccess(true);
+                }
+            } else {
+                // Business plugin absent: fall back to Treasury account membership.
+                boolean canAccess = treasury.isAccountMember(playerUuid, accountId)
+                        || treasury.isOwnerForAccountId(playerUuid, accountId);
+                if (canAccess) {
+                    event.setAccess(true);
+                }
             }
         } catch (Exception e) {
             ChestShop.getBukkitLogger().log(Level.WARNING, "Treasury: Could not check access for " + event.getPlayer().getName() + " on account " + shortName, e);

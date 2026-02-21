@@ -112,6 +112,7 @@ NO_SHOP_FOUND: "No shop found."
 CANNOT_CREATE_SHOP_HERE: "You can't create shop here!"
 
 BUSINESS_ACCOUNT_NOT_FOUND: "Business account not found!"
+BUSINESS_NO_CHESTSHOP_PERMISSION: "You do not have the ChestShop permission within this firm!"
 TREASURY_REQUIRED: "Treasury plugin is required for business account shops!"
 
 TOGGLE_MESSAGES_OFF: "You will no longer receive messages from your shop(s)."
