@@ -19,6 +19,7 @@ import com.Acrobot.ChestShop.Signs.ChestShopSign;
 import com.Acrobot.ChestShop.UUIDs.NameManager;
 import net.democracycraft.business.api.BusinessApi;
 import net.democracycraft.business.model.RolePermission;
+import net.democracycraft.treasury.model.economy.AccountType;
 import net.democracycraft.treasury.model.economy.TransferRequest;
 import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.utils.Idempotency;
@@ -83,12 +84,12 @@ public class TreasuryListener extends EconomyAdapter {
         int systemAccountId;
         try {
             List<net.democracycraft.treasury.model.economy.Account> systemAccounts =
-                    treasury.getAccountsByTypeAndOwner("SYSTEM", CHESTSHOP_SYSTEM_UUID);
+                    treasury.getAccountsByTypeAndOwner(AccountType.SYSTEM, CHESTSHOP_SYSTEM_UUID);
             if (systemAccounts != null && !systemAccounts.isEmpty()) {
                 systemAccountId = systemAccounts.get(0).getAccountId();
             } else {
                 net.democracycraft.treasury.model.economy.Account systemAccount =
-                        treasury.createAccount("SYSTEM", CHESTSHOP_SYSTEM_UUID, "ChestShop System");
+                        treasury.createAccount(AccountType.SYSTEM, CHESTSHOP_SYSTEM_UUID, "ChestShop System");
                 systemAccount.setAllowOverdraft(true);
                 treasury.updateAccount(systemAccount);
                 systemAccountId = systemAccount.getAccountId();
