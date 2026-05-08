@@ -127,6 +127,27 @@
         </dependency>
 
         <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <version>5.14.2</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.26.3</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>com.j256.ormlite</groupId>
             <artifactId>ormlite-jdbc</artifactId>
             <version>6.1</version>
@@ -445,6 +466,54 @@
                             <paperweight-mappings-namespace>mojang</paperweight-mappings-namespace>
                         </manifestEntries>
                     </archive>
+                </configuration>
+            </plugin>
+
+            <!--
+              JaCoCo: instrument tests, emit XML + HTML report into target/site/jacoco.
+              No coverage gate is enforced at the build level — this is a vendored
+              upstream fork with substantial Bukkit-coupled listener / command code
+              that is intentionally out of scope for unit tests. The CI workflow
+              comments coverage on PRs (see .github/workflows/test.yml).
+            -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals><goal>prepare-agent</goal></goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals><goal>report</goal></goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <excludes>
+                        <!-- Vendored / generated / hand-written Base64 implementation -->
+                        <exclude>com/Acrobot/Breeze/Utils/Encoding/Base64.class</exclude>
+                        <!-- Bukkit lifecycle entry points (instantiate too much to unit-test) -->
+                        <exclude>com/Acrobot/ChestShop/ChestShop.class</exclude>
+                        <!-- Listener / command classes — covered by integration tests, not units -->
+                        <exclude>com/Acrobot/ChestShop/Listeners/**</exclude>
+                        <exclude>com/Acrobot/ChestShop/Commands/**</exclude>
+                        <exclude>com/Acrobot/ChestShop/Plugins/**</exclude>
+                        <exclude>com/Acrobot/ChestShop/Updater/**</exclude>
+                        <exclude>com/Acrobot/ChestShop/Database/**</exclude>
+                        <exclude>com/Acrobot/Breeze/Database/**</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <argLine>@{argLine} -XX:+EnableDynamicAgentLoading</argLine>
                 </configuration>
             </plugin>
             <plugin>
