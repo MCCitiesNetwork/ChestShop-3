@@ -20,6 +20,20 @@ public class TaxModule implements Listener {
     private static final String TAX_RECEIVED_MESSAGE = "Applied a tax of %1$f percent (%2$.2f) to the received amount for a resulting price of %3$.2f";
     private static final String TAX_SENT_MESSAGE = "Reduced buy price by tax of %1$f percent (%2$.2f) for a resulting price of %3$.2f as the buyer has the buy tax bypass permission";
 
+    /**
+     * Kill-switch flipped on by {@code TreasuryListener.prepareListener()} when
+     * the Treasury adapter is installed. Treasury routes sales tax through
+     * {@code TaxApi.collectRateTax} into the configured tax-collection
+     * account (typically {@code DCGovernment}), so this legacy event-mutating
+     * path must stand down — otherwise the seller would be netted twice (once
+     * here, once by Treasury).
+     */
+    private static volatile boolean handledByTreasury = false;
+
+    public static void setHandledByTreasury(boolean value) {
+        handledByTreasury = value;
+    }
+
     private static double getTax(UUID partner) {
         double taxAmount = NameManager.isAdminShop(partner) || NameManager.isServerEconomyAccount(partner)
                 ? Properties.SERVER_TAX_AMOUNT : Properties.TAX_AMOUNT;
@@ -38,6 +52,12 @@ public class TaxModule implements Listener {
     @EventHandler(priority = EventPriority.LOW)
     public static void onCurrencyTransfer(CurrencyTransferEvent event) {
         if (event.wasHandled()) {
+            return;
+        }
+        if (handledByTreasury) {
+            // Treasury's TreasuryListener will collect tax via TaxApi after
+            // the receiver credit. Don't mutate amounts or fire a duplicate
+            // CurrencyAddEvent.
             return;
         }
 

@@ -15,16 +15,21 @@ import com.Acrobot.ChestShop.Events.Economy.CurrencySubtractEvent;
 import com.Acrobot.ChestShop.Events.Economy.CurrencyTransferEvent;
 import com.Acrobot.ChestShop.Events.TransactionEvent;
 import com.Acrobot.ChestShop.Listeners.Economy.EconomyAdapter;
+import com.Acrobot.ChestShop.Listeners.Economy.TaxModule;
+import com.Acrobot.ChestShop.Permission;
 import com.Acrobot.ChestShop.Signs.ChestShopSign;
 import com.Acrobot.ChestShop.UUIDs.NameManager;
 import net.democracycraft.business.api.BusinessApi;
 import net.democracycraft.business.model.RolePermission;
+import net.democracycraft.treasury.api.TaxApi;
 import net.democracycraft.treasury.model.economy.AccountType;
 import net.democracycraft.treasury.model.economy.TransferRequest;
+import net.democracycraft.treasury.model.tax.TaxResult;
 import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.utils.Idempotency;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.inventory.ItemStack;
@@ -51,11 +56,13 @@ public class TreasuryListener extends EconomyAdapter {
     private static final Pattern BUSINESS_NAME_PATTERN = Pattern.compile("(?i)^B:[0-9A-Z]+$");
 
     private final TreasuryApi treasury;
+    private final TaxApi taxApi;
     private final int systemAccountId;
     @Nullable private final BusinessApi businessApi;
 
-    private TreasuryListener(TreasuryApi treasury, int systemAccountId, @Nullable BusinessApi businessApi) {
+    private TreasuryListener(TreasuryApi treasury, TaxApi taxApi, int systemAccountId, @Nullable BusinessApi businessApi) {
         this.treasury = treasury;
+        this.taxApi = taxApi;
         this.systemAccountId = systemAccountId;
         this.businessApi = businessApi;
     }
@@ -101,6 +108,24 @@ public class TreasuryListener extends EconomyAdapter {
 
         ChestShop.getBukkitLogger().info("Treasury SYSTEM account initialized (ID: " + systemAccountId + ")");
 
+        // Resolve TaxApi for sales-tax routing into Treasury's default tax
+        // account (typically DCGovernment). Treasury exposes it as a separate
+        // service so we don't need a second Bukkit lookup.
+        TaxApi taxApi = treasury.getTaxApi();
+        if (taxApi == null) {
+            ChestShop.getBukkitLogger().warning(
+                    "Treasury loaded but TaxApi unavailable — ChestShop sales tax will not be collected.");
+        }
+
+        // The legacy TaxModule mutates CurrencyTransferEvent amounts and
+        // fires its own CurrencyAddEvent into the configured server economy
+        // account. With Treasury wired in we route tax through TaxApi
+        // instead — debiting the seller and crediting the configured tax
+        // account. Disable the legacy path so it doesn't double-tax.
+        TaxModule.setHandledByTreasury(true);
+        ChestShop.getBukkitLogger().info("Sales tax now routed via Treasury TaxApi → "
+                + (taxApi != null ? taxApi.getDefaultTaxAccountName() : "(disabled)"));
+
         // Optionally integrate with the Business plugin for CHESTSHOP permission checks
         BusinessApi businessApi = null;
         if (Bukkit.getPluginManager().getPlugin("Business") != null) {
@@ -114,7 +139,7 @@ public class TreasuryListener extends EconomyAdapter {
             }
         }
 
-        return new TreasuryListener(treasury, systemAccountId, businessApi);
+        return new TreasuryListener(treasury, taxApi, systemAccountId, businessApi);
     }
 
     @Override
@@ -313,9 +338,10 @@ public class TreasuryListener extends EconomyAdapter {
         }
 
         // Add to receiver (unless admin shop)
+        int receiverAccountId = -1;
         if (!receiverIsAdmin) {
             try {
-                int receiverAccountId = resolveAccountId(event.getReceiver());
+                receiverAccountId = resolveAccountId(event.getReceiver());
                 byte[] dedupKey = Idempotency.sha256(
                         "chestshop:transfer:add:" + event.getReceiver() + ":" + amountReceived + ":" + System.nanoTime()
                 );
@@ -348,7 +374,65 @@ public class TreasuryListener extends EconomyAdapter {
             }
         }
 
+        // Sales tax. Computed against the receiver-side amount, debited from
+        // the seller's account into Treasury's default tax account (typically
+        // DCGovernment) as a separate ledger entry. Skipped when:
+        //   - the receiver is an admin shop (no real account to debit)
+        //   - the rate is 0 (config-disabled)
+        //   - TaxApi was unavailable at startup
+        //   - the buyer holds the ChestShop.notax.sell permission
+        if (taxApi != null && !receiverIsAdmin && receiverAccountId > 0) {
+            BigDecimal rate = resolveTaxRate(event.getPartner());
+            Player initiatorPlayer = event.getInitiator();
+            if (rate.compareTo(BigDecimal.ZERO) > 0
+                    && (initiatorPlayer == null || !Permission.has(initiatorPlayer, Permission.NO_BUY_TAX))) {
+                try {
+                    UUID initiatorUuid = isBusinessUuid(event.getReceiver())
+                            ? CHESTSHOP_SYSTEM_UUID : event.getReceiver();
+                    byte[] dedupKey = Idempotency.sha256(
+                            "chestshop:tax:" + event.getReceiver() + ":" + amountReceived
+                                    + ":" + System.nanoTime()
+                    );
+                    TaxResult result = taxApi.collectRateTax(
+                            receiverAccountId,
+                            amountReceived,
+                            rate,
+                            "chestshop-sales-tax",
+                            "ChestShop sales tax (" + rate.movePointRight(2).stripTrailingZeros().toPlainString()
+                                    + "% of " + amountReceived + ") — " + message,
+                            initiatorUuid,
+                            "ChestShop",
+                            dedupKey);
+                    if (result instanceof TaxResult.Failed f) {
+                        ChestShop.getBukkitLogger().warning(
+                                "Treasury: sales-tax collection failed for accountId=" + receiverAccountId
+                                        + ": " + f.errorMessage());
+                    }
+                } catch (Exception e) {
+                    // Tax collection is best-effort — log and continue. The
+                    // primary transfer has already committed.
+                    ChestShop.getBukkitLogger().log(Level.WARNING,
+                            "Treasury: sales-tax collection threw for receiver " + event.getReceiver(), e);
+                }
+            }
+        }
+
         event.setHandled(true);
+    }
+
+    /**
+     * Tax rate as a decimal fraction (e.g. {@code 0.05} for 5%). Mirrors the
+     * legacy TaxModule split: {@code SERVER_TAX_AMOUNT} for admin / server
+     * counterparties, {@code TAX_AMOUNT} for everyone else.
+     */
+    private static BigDecimal resolveTaxRate(@Nullable UUID partner) {
+        double pct = (partner != null
+                && (NameManager.isAdminShop(partner) || NameManager.isServerEconomyAccount(partner)))
+                ? Properties.SERVER_TAX_AMOUNT
+                : Properties.TAX_AMOUNT;
+        if (pct == 0) return BigDecimal.ZERO;
+        return BigDecimal.valueOf(pct)
+                .divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP);
     }
 
     private static final int MAX_MESSAGE_LENGTH = 250;
