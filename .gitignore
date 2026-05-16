@@ -11,6 +11,8 @@
 
 # maven
 /target
+# per-module target dirs (adapter/paper/*/target, adapter/spigot/*/target, plugin/target …)
+**/target/
 dependency-reduced-pom.xml
 
 # vim
