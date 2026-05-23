@@ -35,8 +35,15 @@ public class SignParseListener implements Listener {
         String ownerName = event.getOwner();
         String[] lines = event.getLines();
 
-        // If the shop owner is not blank (auto-filled) or the admin shop string, we need to validate it
-        if ((!ChestShopSign.isAdminShop(ownerName)) && (!ownerName.isEmpty())) {
+        // If the shop owner is not blank (auto-filled), the admin-shop string, or a
+        // business token, we need to validate it as a player name. Business shops —
+        // native B:<base36 account id> or legacy b:<FirmName> — are not player names;
+        // their owner line is resolved via AccountQueryEvent (see TreasuryListener), so
+        // skip the player-name regex for them. (Native B:<id> previously slipped through
+        // by masquerading as "player B + id 1A", but a legacy firm name containing a
+        // space or a - . & character fails that and would never reach the resolver.)
+        if ((!ChestShopSign.isAdminShop(ownerName)) && (!ownerName.isEmpty())
+                && !ownerName.regionMatches(true, 0, "B:", 0, 2)) {
 
             // Prepare regexp patterns
             Pattern playernamePattern = Pattern.compile(Properties.VALID_PLAYERNAME_REGEXP); // regexp from config file

@@ -29,6 +29,7 @@ import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.utils.Idempotency;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.block.Sign;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -42,7 +43,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.logging.Level;
-import java.util.regex.Pattern;
 
 /**
  * Treasury economy adapter for ChestShop.
@@ -52,8 +52,6 @@ public class TreasuryListener extends EconomyAdapter {
 
     static final long BUSINESS_UUID_MSB = 0xC5B0000000000000L;
     static final UUID CHESTSHOP_SYSTEM_UUID = new UUID(0xC5B0FFFFFFFFFFFEL, 0xFFFFFFFFFFFFFFFEL);
-
-    private static final Pattern BUSINESS_NAME_PATTERN = Pattern.compile("(?i)^B:[0-9A-Z]+$");
 
     private final TreasuryApi treasury;
     private final TaxApi taxApi;
@@ -478,13 +476,41 @@ public class TreasuryListener extends EconomyAdapter {
         }
 
         String name = event.getName();
-        if (!BUSINESS_NAME_PATTERN.matcher(name).matches()) {
+        // A business token is anything starting with "B:" — the native, uppercase form
+        // written by ChestShopSign.businessAccountSignName, or the legacy lowercase "b:"
+        // form written by the old PlayerBusinesses/PlayerTreasury chestshops. We accept
+        // both prefixes (and any suffix, incl. firm names with spaces) here; the suffix is
+        // disambiguated below. Player names can never contain ':' so this never collides.
+        if (name == null || name.length() < 3 || !name.regionMatches(true, 0, "B:", 0, 2)) {
             return;
         }
 
         try {
-            int accountId = Integer.parseInt(name.substring(2), 36);
-            net.democracycraft.treasury.model.economy.Account treasuryAccount = treasury.getAccountById(accountId);
+            String token = name.substring(2);
+            int accountId = -1;
+            net.democracycraft.treasury.model.economy.Account treasuryAccount = null;
+
+            // Native form: the suffix is a base-36 Treasury account id (e.g. B:1A).
+            try {
+                accountId = Integer.parseInt(token, 36);
+                treasuryAccount = treasury.getAccountById(accountId);
+            } catch (NumberFormatException notBase36) {
+                // e.g. a legacy firm name containing spaces — fall through to the name lookup.
+            }
+
+            // Legacy migration form: the suffix is an old PlayerBusinesses firm *name*
+            // (e.g. b:My Shop). Resolve it to the firm's default BUSINESS account so the
+            // shop keeps working; the physical sign is rewritten to the native form on
+            // first use (see onTransactionMigrateSign). This is also the fallback when a
+            // firm name happens to be valid base-36 but doesn't decode to a real account.
+            if (treasuryAccount == null && businessApi != null) {
+                net.democracycraft.business.model.Firm firm = businessApi.firms().getFirm(token);
+                if (firm != null && firm.getDefaultAccountId() != null) {
+                    accountId = firm.getDefaultAccountId();
+                    treasuryAccount = treasury.getAccountById(accountId);
+                }
+            }
+
             if (treasuryAccount != null) {
                 String displayName = treasuryAccount.getDisplayName();
                 String shortName = ChestShopSign.businessAccountSignName(accountId);
@@ -492,11 +518,42 @@ public class TreasuryListener extends EconomyAdapter {
                 Account csAccount = new Account(displayName, shortName, syntheticUuid);
                 event.setAccount(csAccount);
             }
-        } catch (NumberFormatException e) {
-            // Invalid base-36 number, ignore
         } catch (Exception e) {
             ChestShop.getBukkitLogger().log(Level.WARNING, "Treasury: Could not resolve business account for " + name, e);
         }
+    }
+
+    /**
+     * Lazily migrates legacy business shop signs to the native account-id format.
+     *
+     * <p>The old PlayerBusinesses chestshops addressed a firm by name
+     * ({@code b:<FirmName>}); the native format is {@code B:<base36 account id>}
+     * ({@link ChestShopSign#businessAccountSignName(int)}). By the time a shop
+     * trades, {@link #onAccountQuery} has already resolved the owner account, and
+     * its short name is the canonical native token. So if the physical sign still
+     * shows the legacy text, we rewrite the owner line in place. This runs only on
+     * a completed (non-cancelled) transaction and is a no-op for shops already in
+     * the native form. Firms whose names were altered during the data migration
+     * (stripped special characters) won't resolve and are intentionally left for
+     * their owners to recreate.</p>
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTransactionMigrateSign(TransactionEvent event) {
+        Sign sign = event.getSign();
+        Account owner = event.getOwnerAccount();
+        if (sign == null || owner == null || owner.getUuid() == null || !isBusinessUuid(owner.getUuid())) {
+            return;
+        }
+
+        String canonical = owner.getShortName();
+        if (canonical == null || canonical.equals(ChestShopSign.getOwner(sign))) {
+            return;
+        }
+
+        sign.setLine(ChestShopSign.NAME_LINE, canonical);
+        sign.update(true);
+        ChestShop.getBukkitLogger().info("Migrated legacy business shop sign to " + canonical
+                + " at " + sign.getLocation());
     }
 
     @EventHandler(priority = EventPriority.LOW)
