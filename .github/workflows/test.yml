@@ -30,8 +30,13 @@ jobs:
       # Unit tests only — no real Bukkit server, no MariaDB, no Docker.
       # Listener / command / database packages are excluded from JaCoCo
       # because they require an integration environment to exercise.
+      # -U forces a snapshot update each run. The build depends on
+      # net.democracycraft:treasury-api:*-SNAPSHOT; with `cache: maven` and
+      # Maven's default daily snapshot update policy, the runner would
+      # otherwise reuse a stale cached snapshot and miss newly published API
+      # (e.g. MarketApi), failing to compile.
       - name: Run tests + JaCoCo
-        run: mvn -B -pl plugin -am test -DfailIfNoTests=false
+        run: mvn -B -U -pl plugin -am test -DfailIfNoTests=false
 
       - name: Publish test results
         if: always()
