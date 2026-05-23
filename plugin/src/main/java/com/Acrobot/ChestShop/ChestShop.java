@@ -10,6 +10,8 @@ import com.Acrobot.ChestShop.Commands.AccessToggle;
 import com.Acrobot.ChestShop.Configuration.Messages;
 import com.Acrobot.ChestShop.Configuration.Properties;
 import com.Acrobot.ChestShop.Database.Migrations;
+import com.Acrobot.ChestShop.Market.MarketHook;
+import com.Acrobot.ChestShop.Market.MarketListener;
 import com.Acrobot.ChestShop.Listeners.Block.BlockPlace;
 import com.Acrobot.ChestShop.Listeners.Block.Break.ChestBreak;
 import com.Acrobot.ChestShop.Listeners.Block.Break.SignBreak;
@@ -169,6 +171,7 @@ public class ChestShop extends JavaPlugin {
 
         registerEvents();
         registerVersionedAdapters();
+        MarketHook.init();
 
         registerPluginMessagingChannels();
 
@@ -350,6 +353,8 @@ public class ChestShop extends JavaPlugin {
         registerEvent(new SignBreak());
         registerEvent(new SignCreate());
         registerEvent(new ChestBreak());
+
+        registerEvent(new MarketListener());
 
         registerEvent(new BlockPlace());
         registerEvent(new PlayerConnect());
