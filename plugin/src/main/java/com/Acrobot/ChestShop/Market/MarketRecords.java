@@ -9,14 +9,18 @@ import net.democracycraft.business.model.Firm;
 import net.democracycraft.treasury.api.TreasuryApi;
 import net.democracycraft.treasury.api.market.ChestShopSaleRecord;
 import net.democracycraft.treasury.api.market.ChestShopShopRecord;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.block.Sign;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -75,6 +79,37 @@ final class MarketRecords {
     // ── item identity (ChestShop already encodes custom/enchanted items) ──
     static String itemKey(ItemStack item) { return MaterialUtil.getSignName(item); }
 
+    /**
+     * Human-readable label for the markets UI. Prefers the item's own display
+     * name (an anvil-renamed or custom item), colour codes stripped; otherwise
+     * a prettified material ("DIAMOND_SWORD" -> "Diamond Sword"). Distinct from
+     * {@link #itemKey} — the key stays ChestShop's stable sign code
+     * ("Sunflower#01") for grouping, while this is just for display.
+     */
+    static String itemName(ItemStack item) {
+        if (item.hasItemMeta()) {
+            ItemMeta meta = item.getItemMeta();
+            if (meta != null && meta.hasDisplayName()) {
+                String name = ChatColor.stripColor(meta.getDisplayName());
+                if (name != null && !name.trim().isEmpty()) {
+                    return name.trim();
+                }
+            }
+        }
+        return prettyMaterial(item.getType());
+    }
+
+    /** "DIAMOND_SWORD" -> "Diamond Sword". */
+    private static String prettyMaterial(Material type) {
+        StringBuilder sb = new StringBuilder();
+        for (String word : type.name().toLowerCase(Locale.ROOT).split("_")) {
+            if (word.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return sb.length() > 0 ? sb.toString() : type.name();
+    }
+
     static boolean isCustom(ItemStack item) {
         String key = MaterialUtil.getSignName(item);
         return (key != null && key.contains("#")) || item.hasItemMeta();
@@ -110,7 +145,7 @@ final class MarketRecords {
         return new ChestShopSaleRecord(
                 null, direction, customer,
                 owner.accountId(), owner.type(), owner.firmId(), owner.ownerUuid(), owner.admin(),
-                item.getType().name(), itemKey(item), MaterialUtil.getName(item), isCustom(item), itemData(item),
+                item.getType().name(), itemKey(item), itemName(item), isCustom(item), itemData(item),
                 quantity, unit, total, tax != null ? tax : BigDecimal.ZERO,
                 worldName(l), l.getBlockX(), l.getBlockY(), l.getBlockZ(),
                 owner.admin() ? null : shopStock);
@@ -128,7 +163,7 @@ final class MarketRecords {
         return new ChestShopShopRecord(
                 worldName(l), l.getBlockX(), l.getBlockY(), l.getBlockZ(), owner.admin(),
                 owner.accountId(), owner.type(), owner.firmId(), owner.ownerUuid(),
-                item.getType().name(), itemKey(item), MaterialUtil.getName(item), isCustom(item), itemData(item),
+                item.getType().name(), itemKey(item), itemName(item), isCustom(item), itemData(item),
                 nonNegativeOrNull(PriceUtil.getExactBuyPrice(priceLine)),
                 nonNegativeOrNull(PriceUtil.getExactSellPrice(priceLine)),
                 batch, owner.admin() ? null : currentStock);
