@@ -392,6 +392,7 @@ public class ChestShop extends JavaPlugin {
         registerEvent(new com.Acrobot.ChestShop.Listeners.PreShopCreation.PermissionChecker());
         registerEvent(new com.Acrobot.ChestShop.Listeners.PreShopCreation.ErrorMessageSender());
         registerEvent(new PriceChecker());
+        registerEvent(new FreePriceChecker()); // DC: block free (b:0 / s:0) shops
         registerEvent(new QuantityChecker());
         registerEvent(new TerrainChecker());
     }
@@ -412,6 +413,7 @@ public class ChestShop extends JavaPlugin {
 
         registerEvent(new InvalidNameIgnorer());
         registerEvent(new CreativeModeIgnorer());
+        registerEvent(new FreeShopBreaker()); // DC: break pre-existing free (b:0 / s:0) shops on interact
         registerEvent(new ErrorMessageSender());
         registerEvent(new PermissionChecker());
         registerEvent(new PriceValidator());
