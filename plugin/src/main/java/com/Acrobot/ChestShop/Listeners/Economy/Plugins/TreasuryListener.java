@@ -18,6 +18,7 @@ import com.Acrobot.ChestShop.Listeners.Economy.EconomyAdapter;
 import com.Acrobot.ChestShop.Listeners.Economy.TaxModule;
 import com.Acrobot.ChestShop.Permission;
 import com.Acrobot.ChestShop.Signs.ChestShopSign;
+import com.Acrobot.ChestShop.Utils.ItemUtil;
 import com.Acrobot.ChestShop.UUIDs.NameManager;
 import net.democracycraft.business.api.BusinessApi;
 import net.democracycraft.business.model.RolePermission;
@@ -437,7 +438,11 @@ public class TreasuryListener extends EconomyAdapter {
 
     private static String buildTransferMessage(TransactionEvent txn) {
         int totalItems = Arrays.stream(txn.getStock()).mapToInt(ItemStack::getAmount).sum();
-        String itemName = ChestShopSign.getItem(txn.getSign());
+        // Name the traded item from the actual stack via ChestShop's event-backed
+        // ItemUtil, so the memo reflects custom items (e.g. Nexo, resolved through
+        // ItemStringQueryEvent) rather than only the raw sign-line text. Falls
+        // back to the sign's item line if the stack can't be coded.
+        String itemName = transferItemName(txn);
         String ownerName = txn.getOwnerAccount().getName();
         String clientName = txn.getClient().getName();
         boolean isBuy = txn.getTransactionType() == TransactionEvent.TransactionType.BUY;
@@ -454,6 +459,28 @@ public class TreasuryListener extends EconomyAdapter {
             itemName = itemName.substring(0, available);
         }
         return prefix + itemName + suffix;
+    }
+
+    /**
+     * Canonical, custom-aware name for the traded item: ChestShop's event-backed
+     * {@link ItemUtil#getName(ItemStack, int)} (width 0 = untruncated) so a Nexo
+     * or other bridged item names itself through {@code ItemStringQueryEvent}.
+     * Falls back to the raw sign item line if the stack is missing or can't be
+     * coded, so behaviour is never worse than before.
+     */
+    private static String transferItemName(TransactionEvent txn) {
+        ItemStack[] stock = txn.getStock();
+        if (stock != null && stock.length > 0 && stock[0] != null) {
+            try {
+                String code = ItemUtil.getName(stock[0], 0);
+                if (code != null && !code.isBlank()) {
+                    return code;
+                }
+            } catch (RuntimeException ignored) {
+                // Code didn't round-trip — fall back to the sign line below.
+            }
+        }
+        return ChestShopSign.getItem(txn.getSign());
     }
 
     @EventHandler
