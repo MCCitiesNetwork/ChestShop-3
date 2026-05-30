@@ -159,14 +159,43 @@ public class TreasuryListener extends EconomyAdapter {
     /**
      * Resolve a UUID to a Treasury account ID.
      * If the UUID is a synthetic business UUID, extract the account ID directly.
-     * Otherwise, resolve or create a personal account for the player UUID.
+     * Otherwise, prefer a GOVERNMENT account owned by that UUID before falling
+     * back to resolving (or creating) a personal account for the player UUID.
      */
     private int resolveAccountId(UUID uuid) {
         if (isBusinessUuid(uuid)) {
             return (int) uuid.getLeastSignificantBits();
         }
+        Integer governmentAccountId = resolveGovernmentAccountId(uuid);
+        if (governmentAccountId != null) {
+            return governmentAccountId;
+        }
         net.democracycraft.treasury.model.economy.Account account = treasury.resolveOrCreatePersonal(uuid);
         return account.getAccountId();
+    }
+
+    /**
+     * Legacy DemocracyCraft government ledgers (DCGovernment, SCGovernment, ...) used to
+     * be real players, so shops still address them by that player's name/UUID. Those
+     * ledgers are now GOVERNMENT accounts whose {@code owner_uuid_bin} has been set to the
+     * legacy player UUID, so they must take precedence over personal resolution. Otherwise
+     * {@link TreasuryApi#resolveOrCreatePersonal(UUID)} — which filters to PERSONAL type —
+     * would mint an empty personal account and shop funds would never reach the ledger.
+     *
+     * @return the GOVERNMENT account id owned by {@code uuid}, or {@code null} if none exists.
+     */
+    private Integer resolveGovernmentAccountId(UUID uuid) {
+        try {
+            List<net.democracycraft.treasury.model.economy.Account> governmentAccounts =
+                    treasury.getAccountsByTypeAndOwner(AccountType.GOVERNMENT, uuid);
+            if (governmentAccounts != null && !governmentAccounts.isEmpty()) {
+                return governmentAccounts.get(0).getAccountId();
+            }
+        } catch (Exception e) {
+            ChestShop.getBukkitLogger().log(Level.WARNING,
+                    "Treasury: government account lookup failed for " + uuid, e);
+        }
+        return null;
     }
 
     // --- Economy event handlers ---
@@ -183,7 +212,10 @@ public class TreasuryListener extends EconomyAdapter {
                 int accountId = (int) event.getAccount().getLeastSignificantBits();
                 balance = treasury.getBalanceByAccountId(accountId);
             } else {
-                balance = treasury.getBalanceByOwnerUuid(event.getAccount());
+                Integer governmentAccountId = resolveGovernmentAccountId(event.getAccount());
+                balance = governmentAccountId != null
+                        ? treasury.getBalanceByAccountId(governmentAccountId)
+                        : treasury.getBalanceByOwnerUuid(event.getAccount());
             }
             event.setAmount(balance);
             event.setHandled(true);
@@ -218,7 +250,10 @@ public class TreasuryListener extends EconomyAdapter {
                 int accountId = (int) event.getAccount().getLeastSignificantBits();
                 event.hasAccount(treasury.hasAccountByAccountId(accountId));
             } else {
-                event.hasAccount(treasury.hasAccountByOwnerUuid(event.getAccount()));
+                Integer governmentAccountId = resolveGovernmentAccountId(event.getAccount());
+                event.hasAccount(governmentAccountId != null
+                        ? treasury.hasAccountByAccountId(governmentAccountId)
+                        : treasury.hasAccountByOwnerUuid(event.getAccount()));
             }
             event.setHandled(true);
         } catch (Exception e) {
