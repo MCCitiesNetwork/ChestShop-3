@@ -204,13 +204,14 @@ public class Properties {
     @ConfigurationComment("How many decimal places are allowed at a maximum for prices?")
     public static int PRICE_PRECISION = 2;
 
-    @ConfigurationComment("This makes sure that the UUIDs of player shop accounts match the server's online-mode setting. Disabling this might lead to issues with offline players and is therefore unsupported!")
-    public static boolean ENSURE_CORRECT_PLAYERID = true;
+    @ConfigurationComment("This makes sure that the UUIDs of player shop accounts match the server's online-mode setting. Disabling this might lead to issues with offline players and is therefore unsupported!\n" +
+            "DC fork default is false: Floodgate/Bedrock players have non-v4 UUIDs that this check would reject, blocking them from owning shops.")
+    public static boolean ENSURE_CORRECT_PLAYERID = false;
 
     @ConfigurationComment("This regexp validates the name of the player. If the name doesn't match, the player will neither be able to create a valid shop sign, nor buy/sell from a shop.\n" +
-            "Note for Bedrock support: If you have Floodgate on your server, you should set this regexp to ^\\\\.?\\\\w+$ and ENSURE_CORRECT_PLAYERID to false\n" +
-            "If your Floodgate prefix is not a dot, then change the first . in the regexp (the one before the question mark) to whatever your prefix is.")
-    public static String VALID_PLAYERNAME_REGEXP = "^\\w+$";
+            "DC fork default allows an optional leading Floodgate prefix (the dot) so Bedrock players like .FiftyNine595 can trade and own shops.\n" +
+            "If your Floodgate prefix is not a dot, change the first . in the regexp (the one before the question mark) to whatever your prefix is.")
+    public static String VALID_PLAYERNAME_REGEXP = "^\\.?\\w+$";
 
     @PrecededBySpace
     @ConfigurationComment("Should we block shops that sell things for more than they buy? (This prevents newbies from creating shops that would be exploited)")

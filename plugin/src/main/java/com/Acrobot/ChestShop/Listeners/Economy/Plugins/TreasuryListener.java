@@ -648,6 +648,12 @@ public class TreasuryListener extends EconomyAdapter {
                 // authoritative gate for both shop creation and shop ownership checks.
                 if (businessApi.staff().hasPermissionForAccount(accountId, playerUuid, RolePermission.CHESTSHOP)) {
                     event.setAccess(true);
+                } else if (businessApi.firms().getFirmByAccountId(accountId) == null) {
+                    // PAR-29: no live firm owns this account — the firm was disbanded
+                    // (disband archives the account and removes its firm link). The shop
+                    // is orphaned with no owner to gate it, so let players access (and
+                    // therefore remove) the abandoned shop rather than leaving it stuck.
+                    event.setAccess(true);
                 }
             } else {
                 // Business plugin absent: fall back to Treasury account membership.
